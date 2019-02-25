@@ -3,7 +3,7 @@
 //  iina
 //
 //  Created by lhc on 12/8/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Cocoa
@@ -77,6 +77,23 @@ extension NSSize {
     }
   }
 
+  /**
+   Given another size S, returns a size that:
+
+   - maintains the same aspect ratio;
+   - has same height or/and width as S;
+   - always bigger than S.
+
+   - parameter toSize: The given size S.
+
+   ```
+   +--+------+--+
+   |  |      |  |
+   |  |  S   |  |<-- The result size
+   |  |      |  |
+   +--+------+--+
+   ```
+   */
   func grow(toSize size: NSSize) -> NSSize {
     let sizeAspect = size.aspect
     if aspect > sizeAspect {  // self is wider, grow to meet height
@@ -86,6 +103,23 @@ extension NSSize {
     }
   }
 
+  /**
+   Given another size S, returns a size that:
+
+   - maintains the same aspect ratio;
+   - has same height or/and width as S;
+   - always smaller than S.
+
+   - parameter toSize: The given size S.
+
+   ```
+   +--+------+--+
+   |  |The   |  |
+   |  |result|  |<-- S
+   |  |size  |  |
+   +--+------+--+
+   ```
+   */
   func shrink(toSize size: NSSize) -> NSSize {
     let  sizeAspect = size.aspect
     if aspect < sizeAspect { // self is taller, shrink to meet height
@@ -93,6 +127,13 @@ extension NSSize {
     } else {
       return NSSize(width: size.width, height: size.width / aspect)
     }
+  }
+
+  func centeredRect(in rect: NSRect) -> NSRect {
+    return NSRect(x: (rect.width - width) / 2,
+                  y: (rect.height - height) / 2,
+                  width: width,
+                  height: height)
   }
 
   func multiply(_ multiplier: CGFloat) -> NSSize {
@@ -105,7 +146,15 @@ extension NSSize {
 
 }
 
+
 extension NSRect {
+
+  init(vertexPoint pt1: NSPoint, and pt2: NSPoint) {
+    self.init(x: min(pt1.x, pt2.x),
+              y: min(pt1.y, pt2.y),
+              width: abs(pt1.x - pt2.x),
+              height: abs(pt1.y - pt2.y))
+  }
 
   func multiply(_ multiplier: CGFloat) -> NSRect {
     return NSRect(x: origin.x, y: origin.y, width: width * multiplier, height: height * multiplier)
@@ -118,56 +167,40 @@ extension NSRect {
                   height: newSize.height)
   }
 
-  func makeLocate(in biggerRect: NSRect) -> NSRect {
-    var newX = origin.x, newY = origin.y
-    if newX < 0 {
-      newX = 0
-    }
-    if newY < 0 {
-      newY = 0
-    }
-    if newX + size.width > biggerRect.width {
-      newX = biggerRect.width - size.width
-    }
-    if newY + size.height > biggerRect.height {
-      newY = biggerRect.height - size.height
-    }
-    return NSRect(x: newX, y: newY, width: size.width, height: size.height)
-  }
-
   func constrain(in biggerRect: NSRect) -> NSRect {
-    var newX = origin.x, newY = origin.y
-    var newW = width, newH = height
-    if newX < biggerRect.origin.x {
-      newX = biggerRect.origin.x
+    // new size
+    var newSize = size
+    if newSize.width > biggerRect.width || newSize.height > biggerRect.height {
+      newSize = size.shrink(toSize: biggerRect.size)
     }
-    if newY < biggerRect.origin.y {
-      newY = biggerRect.origin.y
+    // new origin
+    var newOrigin = origin
+    if newOrigin.x < biggerRect.origin.x {
+      newOrigin.x = biggerRect.origin.x
     }
-    if newX + size.width > biggerRect.origin.x + biggerRect.width {
-      newW = biggerRect.origin.x + biggerRect.width - newX
+    if newOrigin.y < biggerRect.origin.y {
+      newOrigin.y = biggerRect.origin.y
     }
-    if newY + size.height > biggerRect.origin.y + biggerRect.height {
-      newH = biggerRect.origin.y + biggerRect.height - newY
+    if newOrigin.x + width > biggerRect.origin.x + biggerRect.width {
+      newOrigin.x = biggerRect.origin.x + biggerRect.width - width
     }
-    return NSRect(x: newX, y: newY, width: newW, height: newH)
+    if newOrigin.y + height > biggerRect.origin.y + biggerRect.height {
+      newOrigin.y = biggerRect.origin.y + biggerRect.height - height
+    }
+    return NSRect(origin: newOrigin, size: newSize)
   }
 }
 
 extension NSPoint {
-  func constrain(in rect: NSRect) -> NSPoint {
-    let l = rect.origin.x
-    let r = l + rect.width
-    let t = rect.origin.y
-    let b = t + rect.height
-    return NSMakePoint(x.constrain(min: l, max: r), y.constrain(min: t, max: b))
+  func constrained(to rect: NSRect) -> NSPoint {
+    return NSMakePoint(x.clamped(to: rect.minX...rect.maxX), y.clamped(to: rect.minY...rect.maxY))
   }
 }
 
 extension Array {
-  func at(_ pos: Int) -> Element? {
-    if pos < count {
-      return self[pos]
+  subscript(at index: Index) -> Element? {
+    if indices.contains(index) {
+      return self[index]
     } else {
       return nil
     }
@@ -175,53 +208,70 @@ extension Array {
 }
 
 extension NSMenu {
-  func addItem(withTitle string: String, action selector: Selector?, tag: Int?, obj: Any?, stateOn: Bool) {
+  func addItem(withTitle string: String, action selector: Selector? = nil, target: AnyObject? = nil,
+               tag: Int? = nil, obj: Any? = nil, stateOn: Bool = false, enabled: Bool = true) {
     let menuItem = NSMenuItem(title: string, action: selector, keyEquivalent: "")
     menuItem.tag = tag ?? -1
     menuItem.representedObject = obj
-    menuItem.state = stateOn ? NSOnState : NSOffState
+    menuItem.target = target
+    menuItem.state = stateOn ? .on : .off
+    menuItem.isEnabled = enabled
     self.addItem(menuItem)
   }
 }
 
-extension Int {
-  func toStr() -> String {
-    return "\(self)"
-  }
-
-  func constrain(min: Int, max: Int) -> Int {
-    var value = self
-    if self < min { value = min }
-    if self > max { value = max }
-    return value
-  }
-}
-
 extension CGFloat {
-  func constrain(min: CGFloat, max: CGFloat) -> CGFloat {
-    var value = self
-    if self < min { value = min }
-    if self > max { value = max }
-    return value
-  }
-
   var unifiedDouble: Double {
     get {
-      return self == 0 ? 0 : (self > 0 ? 1 : -1)
+      return Double(copysign(1, self))
     }
   }
 }
 
 extension Double {
-  func toStr() -> String {
-    return "\(self)"
+  func prettyFormat() -> String {
+    let rounded = (self * 1000).rounded() / 1000
+    if rounded.truncatingRemainder(dividingBy: 1) == 0 {
+      return "\(Int(rounded))"
+    } else {
+      return "\(rounded)"
+    }
   }
+}
 
-  func constrain(min: Double, max: Double) -> Double {
-    var value = self
-    if self < min { value = min }
-    if self > max { value = max }
-    return value
+extension Comparable {
+  func clamped(to range: ClosedRange<Self>) -> Self {
+    if self < range.lowerBound {
+      return range.lowerBound
+    } else if self > range.upperBound {
+      return range.upperBound
+    } else {
+      return self
+    }
+  }
+}
+
+extension BinaryInteger {
+  func clamped(to range: Range<Self>) -> Self {
+    if self < range.lowerBound {
+      return range.lowerBound
+    } else if self >= range.upperBound {
+      return range.upperBound.advanced(by: -1)
+    } else {
+      return self
+    }
+  }
+}
+
+extension FloatingPoint {
+  func clamped(to range: Range<Self>) -> Self {
+    if self < range.lowerBound {
+      return range.lowerBound
+    } else if self >= range.upperBound {
+      return range.upperBound.nextDown
+    } else {
+      return self
+    }
   }
 }
 
@@ -233,7 +283,7 @@ extension NSColor {
   }
 
   convenience init?(mpvColorString: String) {
-    let splitted = mpvColorString.characters.split(separator: "/").map { (seq) -> Double? in
+    let splitted = mpvColorString.split(separator: "/").map { (seq) -> Double? in
       return Double(String(seq))
     }
     // check nil
@@ -258,8 +308,8 @@ extension NSMutableAttributedString {
     let range = NSRange(location: 0, length: self.length)
     let nsurl = NSURL(string: url)!
     self.beginEditing()
-    self.addAttribute(NSLinkAttributeName, value: nsurl, range: range)
-    self.addAttribute(NSFontAttributeName, value: font, range: range)
+    self.addAttribute(.link, value: nsurl, range: range)
+    self.addAttribute(.font, value: font, range: range)
     self.endEditing()
   }
 }
@@ -287,6 +337,7 @@ extension NSData {
       output.appendFormat("%02x", md5Buffer[i])
     }
 
+    md5Buffer.deallocate()
     return NSString(format: output)
   }
 }
@@ -295,6 +346,215 @@ extension Data {
   var md5: String {
     get {
       return (self as NSData).md5() as String
+    }
+  }
+
+  var chksum64: UInt64 {
+    get {
+      let count64 = self.count / MemoryLayout<UInt64>.size
+      return self.withUnsafeBytes{ (ptr: UnsafePointer<UInt64>) -> UInt64 in
+        let bufferPtr = UnsafeBufferPointer(start: ptr, count: count64)
+        return bufferPtr.reduce(UInt64(0), &+)
+      }
+    }
+  }
+
+  func saveToFolder(_ url: URL, filename: String) -> URL? {
+    let fileUrl = url.appendingPathComponent(filename)
+    do {
+      try self.write(to: fileUrl)
+    } catch {
+      Utility.showAlert("error_saving_file", arguments: ["data", filename])
+      return nil
+    }
+    return fileUrl
+  }
+}
+
+extension String {
+  var md5: String {
+    get {
+      return self.data(using: .utf8)!.md5
+    }
+  }
+
+  var isDirectoryAsPath: Bool {
+    get {
+      var re = ObjCBool(false)
+      FileManager.default.fileExists(atPath: self, isDirectory: &re)
+      return re.boolValue
+    }
+  }
+
+  var lowercasedPathExtension: String {
+    return (self as NSString).pathExtension.lowercased()
+  }
+
+  var mpvFixedLengthQuoted: String {
+    return "%\(count)%\(self)"
+  }
+
+  mutating func deleteLast(_ num: Int) {
+    removeLast(Swift.min(num, count))
+  }
+
+  func countOccurances(of str: String, in range: Range<Index>?) -> Int {
+    if let firstRange = self.range(of: str, options: [], range: range, locale: nil) {
+      let nextRange = firstRange.upperBound..<self.endIndex
+      return 1 + countOccurances(of: str, in: nextRange)
+    } else {
+      return 0
+    }
+  }
+}
+
+
+extension CharacterSet {
+  static let urlAllowed: CharacterSet = {
+    var set = CharacterSet.urlHostAllowed
+      .union(.urlUserAllowed)
+      .union(.urlPasswordAllowed)
+      .union(.urlPathAllowed)
+      .union(.urlQueryAllowed)
+      .union(.urlFragmentAllowed)
+    set.insert(charactersIn: "%")
+    return set
+  }()
+}
+
+
+extension NSMenuItem {
+  static let dummy = NSMenuItem(title: "Dummy", action: nil, keyEquivalent: "")
+}
+
+
+extension URL {
+  var isExistingDirectory: Bool {
+    return (try? self.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+  }
+}
+
+
+extension NSTextField {
+
+  func setHTMLValue(_ html: String) {
+    let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    let color = self.textColor ?? NSColor.labelColor
+    let style = String(format: "<style>body{font-family: '%@'; font-size:%fpx;}</style>", font.fontName, font.pointSize)
+    if let data = (style + html).data(using: .utf8), let string = NSMutableAttributedString(html: data, options: [.textEncodingName: "utf8"], documentAttributes: nil) {
+      string.enumerateAttributes(in: NSMakeRange(0, string.length) , options: []) { attrs, range, _ in
+        if attrs[.link] == nil {
+          string.setAttributes([.foregroundColor: color], range: range)
+        }
+      }
+      self.attributedStringValue = string
+    }
+  }
+
+}
+
+extension NSImage {
+  func tinted(_ tintColor: NSColor) -> NSImage {
+    guard self.isTemplate else { return self }
+
+    let image = self.copy() as! NSImage
+    image.lockFocus()
+
+    tintColor.set()
+    NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
+
+    image.unlockFocus()
+    image.isTemplate = false
+
+    return image
+  }
+
+  func rounded() -> NSImage {
+    let image = NSImage(size: size)
+    image.lockFocus()
+
+    let frame = NSRect(origin: .zero, size: size)
+    NSBezierPath(ovalIn: frame).addClip()
+    draw(at: .zero, from: frame, operation: .sourceOver, fraction: 1)
+
+    image.unlockFocus()
+    return image
+  }
+
+  static func maskImage(cornerRadius: CGFloat) -> NSImage {
+    let image = NSImage(size: NSSize(width: cornerRadius * 2, height: cornerRadius * 2), flipped: false) { rectangle in
+      let bezierPath = NSBezierPath(roundedRect: rectangle, xRadius: cornerRadius, yRadius: cornerRadius)
+      NSColor.black.setFill()
+      bezierPath.fill()
+      return true
+    }
+    image.capInsets = NSEdgeInsets(top: cornerRadius, left: cornerRadius, bottom: cornerRadius, right: cornerRadius)
+    return image
+  }
+}
+
+
+extension NSVisualEffectView {
+  func roundCorners(withRadius cornerRadius: CGFloat) {
+    if #available(macOS 10.14, *) {
+      maskImage = .maskImage(cornerRadius: cornerRadius)
+    } else {
+      layer?.cornerRadius = cornerRadius
+    }
+  }
+}
+
+
+extension NSBox {
+  static func horizontalLine() -> NSBox {
+    let box = NSBox(frame: NSRect(origin: .zero, size: NSSize(width: 100, height: 1)))
+    box.boxType = .separator
+    return box
+  }
+}
+
+
+extension NSPasteboard.PasteboardType {
+  static let nsURL = NSPasteboard.PasteboardType("NSURL")
+  static let nsFilenames = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+  static let iinaPlaylistItem = NSPasteboard.PasteboardType("IINAPlaylistItem")
+}
+
+
+extension NSWindow.Level {
+  static let iinaFloating = NSWindow.Level(NSWindow.Level.floating.rawValue - 1)
+  static let iinaBlackScreen = NSWindow.Level(NSWindow.Level.mainMenu.rawValue + 1)
+}
+
+extension NSUserInterfaceItemIdentifier {
+  static let isChosen = NSUserInterfaceItemIdentifier("IsChosen")
+  static let trackId = NSUserInterfaceItemIdentifier("TrackId")
+  static let trackName = NSUserInterfaceItemIdentifier("TrackName")
+  static let isPlayingCell = NSUserInterfaceItemIdentifier("IsPlayingCell")
+  static let trackNameCell = NSUserInterfaceItemIdentifier("TrackNameCell")
+  static let key = NSUserInterfaceItemIdentifier("Key")
+  static let value = NSUserInterfaceItemIdentifier("Value")
+  static let action = NSUserInterfaceItemIdentifier("Action")
+}
+
+extension NSAppearance {
+  @available(macOS 10.14, *)
+  convenience init?(iinaTheme theme: Preference.Theme) {
+    switch theme {
+    case .dark:
+      self.init(named: .darkAqua)
+    case .light:
+      self.init(named: .aqua)
+    default:
+      return nil
+    }
+  }
+
+  var isDark: Bool {
+    if #available(macOS 10.14, *) {
+      return name == .darkAqua || name == .vibrantDark || name == .accessibilityHighContrastDarkAqua || name == .accessibilityHighContrastVibrantDark
+    } else {
+      return name == .vibrantDark
     }
   }
 }

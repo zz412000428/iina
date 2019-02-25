@@ -3,17 +3,38 @@
 //  iina
 //
 //  Created by lhc on 21/7/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Foundation
 
 class PlaybackInfo {
 
+  unowned let player: PlayerCore
+
+  init(_ pc: PlayerCore) {
+    player = pc
+  }
+
+  var isIdle: Bool = true {
+    didSet {
+      PlayerCore.checkStatusForSleep()
+    }
+  }
   var fileLoading: Bool = false
 
-  var currentURL: URL?
+  var currentURL: URL? {
+    didSet {
+      if let url = currentURL {
+        mpvMd5 = Utility.mpvWatchLaterMd5(url.path)
+      } else {
+        mpvMd5 = nil
+      }
+    }
+  }
+  var currentFolder: URL?
   var isNetworkResource: Bool = false
+  var mpvMd5: String?
 
   var videoWidth: Int?
   var videoHeight: Int?
@@ -21,18 +42,39 @@ class PlaybackInfo {
   var displayWidth: Int?
   var displayHeight: Int?
 
-  var isAlwaysOntop: Bool = false
-
   var rotation: Int = 0
 
   var videoPosition: VideoTime?
-
   var videoDuration: VideoTime?
 
-  var isSeeking: Bool = false
-  var isPaused: Bool = false
+  var cachedWindowScale: Double = 1.0
 
-  var jumppedFromPlaylist: Bool = false
+  func constrainVideoPosition() {
+    guard let duration = videoDuration else { return }
+    if videoPosition!.second < 0 { videoPosition!.second = 0 }
+    if videoPosition!.second > duration.second { videoPosition!.second = duration.second }
+  }
+
+  var isSeeking: Bool = false
+  var isPaused: Bool = false {
+    didSet {
+      PlayerCore.checkStatusForSleep()
+      if player == PlayerCore.lastActive {
+        if #available(macOS 10.13, *), RemoteCommandController.useSystemMediaControl {
+          NowPlayingInfoManager.updateState(isPaused ? .paused : .playing)
+        }
+        if #available(macOS 10.12, *), player.mainWindow.pipStatus == .inPIP {
+          player.mainWindow.pip.playing = !isPaused
+        }
+      }
+    }
+  }
+
+  var justLaunched: Bool = true
+  var justStartedFile: Bool = false
+  var justOpenedFile: Bool = false
+  var shouldAutoLoadFiles: Bool = false
+  var disableOSDForFileLoading: Bool = false
 
   /** The current applied aspect, used for find current aspect in menu, etc. Maybe not a good approach. */
   var unsureAspect: String = "Default"
@@ -40,7 +82,8 @@ class PlaybackInfo {
   var cropFilter: MPVFilter?
   var flipFilter: MPVFilter?
   var mirrorFilter: MPVFilter?
-  var audioEqFilter: MPVFilter?
+  var audioEqFilters: [MPVFilter?]?
+  var delogoFilter: MPVFilter?
 
   var deinterlace: Bool = false
 
@@ -51,16 +94,11 @@ class PlaybackInfo {
   var gamma: Int = 0
   var hue: Int = 0
 
-  var volume: Int = 50 {
-    didSet {
-      if volume < 0 { volume = 0 }
-      else if volume > 100 { volume = 100 }
-    }
-  }
+  var volume: Double = 50
 
   var isMuted: Bool = false
 
-  var playSpeed: Double = 0
+  var playSpeed: Double = 1
 
   var audioDelay: Double = 0
   var subDelay: Double = 0
@@ -87,15 +125,14 @@ class PlaybackInfo {
 
   var subEncoding: String?
 
+  var haveDownloadedSub: Bool = false
+
   func trackList(_ type: MPVTrack.TrackType) -> [MPVTrack] {
     switch type {
     case .video: return videoTracks
     case .audio: return audioTracks
-    case .sub: return subTracks
-    // for menu update, etc.
-    case .secondSub: return subTracks.map { $0.type = .secondSub; return $0 }
+    case .sub, .secondSub: return subTracks
     }
-
   }
 
   func trackId(_ type: MPVTrack.TrackType) -> Int? {
@@ -124,12 +161,7 @@ class PlaybackInfo {
       list = subTracks
     }
     if let id = id {
-      for i in list {
-        if i.id == id {
-          return i
-        }
-      }
-      return nil
+      return list.first { $0.id == id }
     } else {
       return nil
     }
@@ -138,4 +170,24 @@ class PlaybackInfo {
   var playlist: [MPVPlaylistItem] = []
   var chapters: [MPVChapter] = []
 
+  var matchedSubs: [String: [URL]] = [:]
+  var currentSubsInfo: [FileInfo] = []
+  var currentVideosInfo: [FileInfo] = []
+  var cachedVideoDurationAndProgress: [String: (duration: Double?, progress: Double?)] = [:]
+
+  var thumbnailsReady = false
+  var thumbnailsProgress: Double = 0
+  var thumbnails: [FFThumbnail] = []
+
+  func getThumbnail(forSecond sec: Double) -> FFThumbnail? {
+    guard !thumbnails.isEmpty else { return nil }
+    var tb = thumbnails.last!
+    for i in 0..<thumbnails.count {
+      if thumbnails[i].realTime >= sec {
+        tb = thumbnails[(i == 0 ? i : i - 1)]
+        break
+      }
+    }
+    return tb
+  }
 }

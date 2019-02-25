@@ -7,17 +7,36 @@
 //
 
 import Foundation
+import PromiseKit
 
-class OnlineSubtitle {
+fileprivate let subsystem = Logger.Subsystem(rawValue: "onlinesub")
+
+class OnlineSubtitle: NSObject {
 
   typealias SubCallback = ([OnlineSubtitle]) -> Void
 
-  /** URL to downloaded subtitle*/
-  typealias DownloadCallback = (URL) -> Void
+  enum DownloadResult {
+    case ok([URL])
+    case failed
+  }
+
+  typealias DownloadCallback = (DownloadResult) -> Void
 
   enum Source: Int {
     case shooter = 0
-    // case openSub
+    case openSub
+    case assrt
+
+    var name: String {
+      switch self {
+      case .shooter:
+        return "shooter.cn"
+      case .openSub:
+        return "opensubtitles.org"
+      case .assrt:
+        return "assrt.net"
+      }
+    }
   }
 
   /** Prepend a number before file name to avoid overwritting. */
@@ -27,37 +46,124 @@ class OnlineSubtitle {
     self.index = index
   }
 
-  static func getSub(forFile url: URL, from userSource: Source? = nil, callback: @escaping SubCallback) {
+  static func getSubtitle(forFile url: URL, from userSource: Source? = nil, playerCore: PlayerCore, callback: @escaping SubCallback) {
 
     var source: Source
 
     if userSource == nil {
-      source = Source(rawValue: UserDefaults.standard.integer(forKey: Preference.Key.onlineSubSource)) ?? .shooter
+      source = Source(rawValue: Preference.integer(for: .onlineSubSource)) ?? .openSub
     } else {
       source = userSource!
     }
 
+    Logger.log("Search subtitle from \(source.name)...", subsystem: subsystem)
+
+    playerCore.sendOSD(.startFindingSub(source.name), autoHide: false)
+
     switch source {
     case .shooter:
-      if let info = ShooterSubtitle.hash(url) {
-        ShooterSubtitle.request(info, callback: callback)
+      // shooter
+      let subSupport = ShooterSupport()
+      subSupport.hash(url)
+      .then { info in
+        subSupport.request(info)
+      }.done { subs in
+        callback(subs)
+      }.ensure {
+        playerCore.hideOSD()
+      }.catch { error in
+        let osdMessage: OSDMessage
+        switch error {
+        case ShooterSupport.ShooterError.cannotReadFile,
+             ShooterSupport.ShooterError.fileTooSmall:
+          osdMessage = .fileError
+        case ShooterSupport.ShooterError.networkError:
+          osdMessage = .networkError
+        default:
+          osdMessage = .networkError
+          playerCore.sendOSD(osdMessage)
+          playerCore.isSearchingOnlineSubtitle = false
+        }
+      }
+    case .openSub:
+      // opensubtitles
+      let subSupport = OpenSubSupport.shared
+      // - language
+      let userLang = Preference.string(for: .subLang) ?? ""
+      if userLang.isEmpty {
+        Utility.showAlert("sub_lang_not_set")
+        subSupport.language = "eng"
       } else {
-        // if cannot get hash, treat as sub not found
-        callback([])
+        subSupport.language = userLang
+      }
+      // - request
+      subSupport.login()
+      .then { _ in
+        subSupport.hash(url)
+      }.then { info in
+        subSupport.request(info.dictionary)
+      }.recover { error -> Promise<[OpenSubSubtitle]> in
+        if case OpenSubSupport.OpenSubError.noResult = error {
+          return subSupport.requestByName(url)
+        } else {
+          throw error
+        }
+      }.then { subs in
+        subSupport.showSubSelectWindow(with: subs)
+      }.done { selectedSubs in
+        callback(selectedSubs)
+      }.catch { err in
+        let osdMessage: OSDMessage
+        switch err {
+        case OpenSubSupport.OpenSubError.cannotReadFile,
+             OpenSubSupport.OpenSubError.fileTooSmall:
+          osdMessage = .fileError
+        case OpenSubSupport.OpenSubError.loginFailed:
+          osdMessage = .cannotLogin
+        case OpenSubSupport.OpenSubError.userCanceled:
+          osdMessage = .canceled
+        case OpenSubSupport.OpenSubError.xmlRpcError:
+          osdMessage = .networkError
+        case OpenSubSupport.OpenSubError.noResult:
+          callback([])
+          return
+        default:
+          osdMessage = .networkError
+        }
+        playerCore.sendOSD(osdMessage)
+        playerCore.isSearchingOnlineSubtitle = false
+      }
+    case .assrt:
+      let subSupport = AssrtSupport.shared
+      firstly { () -> Promise<[AssrtSubtitle]> in
+        if !subSupport.checkToken() {
+          throw AssrtSupport.AssrtError.userCanceled
+        }
+        return subSupport.search(url.deletingPathExtension().lastPathComponent)
+      }.then { subs in
+        subSupport.showSubSelectWindow(with: subs)
+      }.then { selectedSubs -> Promise<[AssrtSubtitle]> in
+        return when(fulfilled: selectedSubs.map({ subSupport.loadDetails(forSub: $0) }))
+      }.done { loadedSubs in
+        callback(loadedSubs as [OnlineSubtitle])
+      }.ensure {
+        playerCore.hideOSD()
+      }.catch { err in
+        let osdMessage: OSDMessage
+        switch err {
+        case AssrtSupport.AssrtError.userCanceled:
+          osdMessage = .canceled
+        default:
+          Logger.log(err.localizedDescription, level: .error)
+          osdMessage = .networkError
+        }
+        playerCore.sendOSD(osdMessage)
+        playerCore.isSearchingOnlineSubtitle = false
       }
     }
-
   }
 
   func download(callback: @escaping DownloadCallback) { }
 
 }
 
-protocol OnlineSubtitleSupport {
-
-  associatedtype RequestData
-
-  static func request(_ info: RequestData, callback: @escaping OnlineSubtitle.SubCallback)
-  static func hash(_ url: URL) -> RequestData?
-
-}

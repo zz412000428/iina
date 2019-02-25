@@ -3,7 +3,7 @@
 //  iina
 //
 //  Created by lhc on 31/7/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Cocoa
@@ -11,20 +11,32 @@ import Cocoa
 class MPVTrack: NSObject {
 
   /** For binding a none track object to menu, id = 0 */
-  static let noneVideoTrack = MPVTrack(id: 0, type: .video, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+  static let noneVideoTrack: MPVTrack = {
+    let track = MPVTrack(id: 0, type: .video, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+    track.title = NSLocalizedString("track.none", comment: "<None>")
+    return track
+  }()
   /** For binding a none track object to menu, id = 0 */
-  static let noneAudioTrack = MPVTrack(id: 0, type: .audio, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+  static let noneAudioTrack: MPVTrack = {
+    let track = MPVTrack(id: 0, type: .audio, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+    track.title = NSLocalizedString("track.none", comment: "<None>")
+    return track
+  }()
   /** For binding a none track object to menu, id = 0 */
-  static let noneSubTrack = MPVTrack(id: 0, type: .sub, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+  static let noneSubTrack: MPVTrack = {
+    let track = MPVTrack(id: 0, type: .sub, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+    track.title = NSLocalizedString("track.none", comment: "<None>")
+    return track
+  }()
   /** For binding a none track object to menu, id = 0 */
-  static let noneSecongSubTrack = MPVTrack(id: 0, type: .secondSub, isDefault: false, isForced: false, isSelected: false, isExternal: false)
+  static let noneSecondSubTrack = MPVTrack(id: 0, type: .secondSub, isDefault: false, isForced: false, isSelected: false, isExternal: false)
 
-  static func emptyTrack(_ type: TrackType) -> MPVTrack {
+  static func emptyTrack(for type: TrackType) -> MPVTrack {
     switch type {
     case .video: return noneVideoTrack
     case .audio: return noneAudioTrack
     case .sub: return noneSubTrack
-    case .secondSub: return noneSecongSubTrack
+    case .secondSub: return noneSecondSubTrack
     }
 
   }
@@ -48,29 +60,75 @@ class MPVTrack: NSObject {
   var isExternal: Bool
   var externalFilename: String?
   var codec: String?
-
-  var readableTitle: String {
-    get {
-      let title = self.title ?? ""
-      let rawLang = self.lang ?? ""
-      let lang = rawLang == "" ? "" : "[\(rawLang)]"
-      let def = self.isDefault ? "(Default)" : ""
-      return "#\(self.id) \(title) \(lang) \(def)"
-    }
-  }
-
-  // unimplemented
-
-  var isAlbumart: Bool?
-
-  var ffIndex: Int?
-  var decoderDesc: String?
   var demuxW: Int?
   var demuxH: Int?
   var demuxChannelCount: Int?
   var demuxChannels: String?
   var demuxSamplerate: Int?
   var demuxFps: Double?
+
+
+  var readableTitle: String {
+    get {
+      return "\(self.idString) \(self.infoString)"
+    }
+  }
+
+  var idString: String {
+    get {
+      return "#\(self.id)"
+    }
+  }
+
+  var infoString: String {
+    get {
+      // title
+      let title = self.title ?? ""
+      // lang
+      let language: String
+      if let lang = self.lang, lang != "und", let rawLang = ISO639Helper.dictionary[lang] {
+        language = "[\(rawLang)]"
+      } else {
+        language = ""
+      }
+      // info
+      var components: [String] = []
+      if let ds = self.decoderDesc, let shortDs = ds.components(separatedBy: "(")[at: 0] {
+        components.append("\(shortDs.replacingOccurrences(of: " ", with: ""))")
+      }
+      switch self.type {
+      case .video:
+        if let w = self.demuxW, let h = self.demuxH {
+          components.append("\(w)\u{d7}\(h)")
+        }
+        if let fps = self.demuxFps {
+          components.append("\(fps.prettyFormat())fps")
+        }
+      case .audio:
+        if let ch = self.demuxChannelCount {
+          components.append("\(ch)ch")
+        }
+        if let sr = self.demuxSamplerate {
+          components.append("\((Double(sr)/1000).prettyFormat())kHz")
+        }
+      default:
+        break
+      }
+      let info = components.joined(separator: ", ")
+      // default
+      let isDefault = self.isDefault ? "(" + NSLocalizedString("quicksetting.item_default", comment: "Default") + ")" : ""
+      // final string
+      return [language, title, info, isDefault].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+  }
+
+  var isAlbumart: Bool = false
+
+  // unimplemented
+
+  var ffIndex: Int?
+  var decoderDesc: String?
 
   init(id: Int, type: TrackType, isDefault: Bool, isForced: Bool, isSelected: Bool, isExternal: Bool) {
     self.id = id
@@ -98,5 +156,4 @@ class MPVTrack: NSObject {
       return codec == "ass"
     }
   }
-
 }

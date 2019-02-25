@@ -3,7 +3,7 @@
 //  iina
 //
 //  Created by lhc on 13/8/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Cocoa
@@ -11,7 +11,7 @@ import Cocoa
 class SlideUpButton: NSButton {
 
   override func resetCursorRects() {
-    addCursorRect(self.bounds, cursor: NSCursor.pointingHand())
+    addCursorRect(self.bounds, cursor: .pointingHand)
   }
 
 }

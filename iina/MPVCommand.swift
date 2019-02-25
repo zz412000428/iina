@@ -28,7 +28,7 @@ struct MPVCommand: RawRepresentable {
   static let cycle = MPVCommand("cycle")
   /** multiply <property> <factor> */
   static let multiply = MPVCommand("multiply")
-  /** screenshot [subtitles|video|window|- [single|each-frame]] */
+  /** screenshot [subtitles|video|window|single|each-frame] */
   static let screenshot = MPVCommand("screenshot")
   /** screenshot-to-file "<filename>" [subtitles|video|window] */
   static let screenshotToFile = MPVCommand("screenshot-to-file")
@@ -64,12 +64,12 @@ struct MPVCommand: RawRepresentable {
   static let subStep = MPVCommand("sub-step")
   /** sub-seek <skip> */
   static let subSeek = MPVCommand("sub-seek")
-  /** osd [<level>] */
-  static let osd = MPVCommand("osd")
   /** print-text "<string>" */
   static let printText = MPVCommand("print-text")
-  /** show-text "<string>" [<duration>|- [<level>]] */
+  /** show-text "<string>" [<duration>|-1 [<level>]] */
   static let showText = MPVCommand("show-text")
+  /** expand-text "<string>" */
+  static let expandText = MPVCommand("expand-text")
   /** show-progress */
   static let showProgress = MPVCommand("show-progress")
   /** write-watch-later-config */
@@ -128,4 +128,6 @@ struct MPVCommand: RawRepresentable {
   static let applyProfile = MPVCommand("apply-profile")
   /** load-script "<path>" */
   static let loadScript = MPVCommand("load-script")
+  /** change-list "<option>" "<operation>" "<value>" */
+  static let changeList = MPVCommand("change-list")
 }

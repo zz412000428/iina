@@ -3,22 +3,19 @@
 //  iina
 //
 //  Created by lhc on 12/8/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Cocoa
 
-class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, SidebarViewController {
 
-  override var nibName: String {
-    return "QuickSettingViewController"
+  override var nibName: NSNib.Name {
+    return NSNib.Name("QuickSettingViewController")
   }
-  
-  let distanceBetweenSliderAndIndicator: CGFloat = 14
-  let sliderIndicatorHalfWidth:CGFloat = 16
-  
+
   let sliderSteps = 24.0
-  
+
   /**
    Similiar to the one in `PlaylistViewController`.
    Since IBOutlet is `nil` when the view is not loaded at first time,
@@ -30,8 +27,15 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   /** Tab type. Use TrackType for now. Propobably not a good choice. */
   typealias TabViewType = MPVTrack.TrackType
 
-  weak var playerCore: PlayerCore! = PlayerCore.shared
-  weak var mainWindow: MainWindowController!
+  weak var player: PlayerCore!
+
+  weak var mainWindow: MainWindowController! {
+    didSet {
+      self.player = mainWindow.player
+    }
+  }
+
+  var currentTab: TabViewType = .video
 
   var observers: [NSObjectProtocol] = []
 
@@ -40,6 +44,8 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   @IBOutlet weak var audioTabBtn: NSButton!
   @IBOutlet weak var subTabBtn: NSButton!
   @IBOutlet weak var tabView: NSTabView!
+
+  @IBOutlet weak var buttonTopConstraint: NSLayoutConstraint!
 
   @IBOutlet weak var videoTableView: NSTableView!
   @IBOutlet weak var audioTableView: NSTableView!
@@ -55,6 +61,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
 
   @IBOutlet weak var speedSlider: NSSlider!
   @IBOutlet weak var speedSliderIndicator: NSTextField!
+  @IBOutlet weak var speedSliderConstraint: NSLayoutConstraint!
   @IBOutlet weak var customSpeedTextField: NSTextField!
   @IBOutlet weak var deinterlaceCheckBtn: NSButton!
 
@@ -64,11 +71,17 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   @IBOutlet weak var gammaSlider: NSSlider!
   @IBOutlet weak var hueSlider: NSSlider!
 
-  @IBOutlet weak var customAudioDelayTextField: NSTextField!
+  @IBOutlet weak var audioDelaySlider: NSSlider!
   @IBOutlet weak var audioDelaySliderIndicator: NSTextField!
+  @IBOutlet weak var audioDelaySliderConstraint: NSLayoutConstraint!
+  @IBOutlet weak var customAudioDelayTextField: NSTextField!
 
-  @IBOutlet weak var customSubDelayTextField: NSTextField!
+
+  @IBOutlet weak var subLoadSementedControl: NSSegmentedControl!
+  @IBOutlet weak var subDelaySlider: NSSlider!
   @IBOutlet weak var subDelaySliderIndicator: NSTextField!
+  @IBOutlet weak var subDelaySliderConstraint: NSLayoutConstraint!
+  @IBOutlet weak var customSubDelayTextField: NSTextField!
 
   @IBOutlet weak var audioEqSlider1: NSSlider!
   @IBOutlet weak var audioEqSlider2: NSSlider!
@@ -83,6 +96,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
 
   @IBOutlet weak var subScaleSlider: NSSlider!
   @IBOutlet weak var subScaleResetBtn: NSButton!
+  @IBOutlet weak var subPosSlider: NSSlider!
 
   @IBOutlet weak var subTextColorWell: NSColorWell!
   @IBOutlet weak var subTextSizePopUp: NSPopUpButton!
@@ -91,8 +105,11 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   @IBOutlet weak var subTextBgColorWell: NSColorWell!
   @IBOutlet weak var subTextFontBtn: NSButton!
 
-
-
+  var downShift: CGFloat = 0 {
+    didSet {
+      buttonTopConstraint.constant = downShift
+    }
+  }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -101,22 +118,33 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
       view.dataSource = self
       view.superview?.superview?.layer?.cornerRadius = 4
     }
-    customSpeedTextField.formatter = DecimalFormatter()
+
+    // colors
+    if #available(macOS 10.14, *) {
+      withAllTableViews { tableView, _ in tableView.backgroundColor = NSColor(named: .sidebarTableBackground)! }
+    }
+
     if pendingSwitchRequest != nil {
       switchToTab(pendingSwitchRequest!)
       pendingSwitchRequest = nil
     }
 
+    subLoadSementedControl.image(forSegment: 1)?.isTemplate = true
+
+    func observe(_ name: Notification.Name, block: @escaping (Notification) -> Void) {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: player, queue: .main, using: block))
+    }
+
     // notifications
-    let tracklistChangeObserver = NotificationCenter.default.addObserver(forName: Constants.Noti.tracklistChanged, object: nil, queue: OperationQueue.main) { _ in
-      self.playerCore.getTrackInfo()
-      self.withAllTableViews { $0.0.reloadData() }
+    observe(.iinaTracklistChanged) { _ in
+      self.withAllTableViews { view, _ in view.reloadData() }
     }
-    observers.append(tracklistChangeObserver)
-    let afChangeObserver = NotificationCenter.default.addObserver(forName: Constants.Noti.afChanged, object: nil, queue: OperationQueue.main) { _ in
-      self.updateAudioEqState()
+    observe(.iinaVIDChanged) { _ in self.videoTableView.reloadData() }
+    observe(.iinaAIDChanged) { _ in self.audioTableView.reloadData() }
+    observe(.iinaSIDChanged) { _ in
+      self.subTableView.reloadData()
+      self.secSubTableView.reloadData()
     }
-    observers.append(afChangeObserver)
   }
 
   // MARK: - Validate UI
@@ -124,6 +152,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   /** Do syncronization*/
   override func viewDidAppear() {
     // image sub
+    super.viewDidAppear()
     updateControlsState()
   }
 
@@ -134,60 +163,107 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   }
 
   private func updateControlsState() {
-    // Video
-    aspectSegment.selectSegment(withLabel: playerCore.info.unsureAspect)
-    cropSegment.selectSegment(withLabel: playerCore.info.unsureCrop)
-    rotateSegment.selectSegment(withTag: AppData.rotations.index(of: playerCore.info.rotation) ?? -1)
-    customSpeedTextField.doubleValue = playerCore.mpvController.getDouble(MPVOption.PlaybackControl.speed)
-    deinterlaceCheckBtn.state = playerCore.info.deinterlace ? NSOnState : NSOffState
+    updateVideoTabControl()
+    updateAudioTabControl()
+    updateSubTabControl()
+    updateVideoEqState()
+    updateAudioEqState()
+  }
 
-    // Audio
-    customAudioDelayTextField.doubleValue = playerCore.mpvController.getDouble(MPVOption.Audio.audioDelay)
+  private func updateVideoTabControl() {
+    if let index = AppData.aspectsInPanel.index(of: player.info.unsureAspect) {
+      aspectSegment.selectedSegment = index
+    } else {
+      aspectSegment.selectedSegment = -1
+    }
+    if let index = AppData.cropsInPanel.index(of: player.info.unsureCrop) {
+      cropSegment.selectedSegment = index
+    } else {
+      cropSegment.selectedSegment = -1
+    }
+    rotateSegment.selectSegment(withTag: AppData.rotations.index(of: player.info.rotation) ?? -1)
+    deinterlaceCheckBtn.state = player.info.deinterlace ? .on : .off
+    let speed = player.mpv.getDouble(MPVOption.PlaybackControl.speed)
+    customSpeedTextField.doubleValue = speed
+    let sliderValue = log(speed / AppData.minSpeed) / log(AppData.maxSpeed / AppData.minSpeed) * sliderSteps
+    speedSlider.doubleValue = sliderValue
+    redraw(indicator: speedSliderIndicator, constraint: speedSliderConstraint, slider: speedSlider, value: "\(customSpeedTextField.stringValue)x")
+  }
 
-    // Sub
-    if let currSub = playerCore.info.currentTrack(.sub) {
+  private func updateAudioTabControl() {
+    let audioDelay = player.mpv.getDouble(MPVOption.Audio.audioDelay)
+    audioDelaySlider.doubleValue = audioDelay
+    customAudioDelayTextField.doubleValue = audioDelay
+    redraw(indicator: audioDelaySliderIndicator, constraint: audioDelaySliderConstraint, slider: audioDelaySlider, value: "\(customAudioDelayTextField.stringValue)s")
+  }
+
+  private func updateSubTabControl() {
+    if let currSub = player.info.currentTrack(.sub) {
       subScaleSlider.isEnabled = !currSub.isImageSub
       // FIXME: CollorWells cannot be disable?
       let enableTextSettings = !(currSub.isAssSub || currSub.isImageSub)
       [subTextColorWell, subTextSizePopUp, subTextBgColorWell, subTextBorderColorWell, subTextBorderWidthPopUp, subTextFontBtn].forEach { $0.isEnabled = enableTextSettings }
     }
 
-    let currSubScale = playerCore.mpvController.getDouble(MPVOption.Subtitles.subScale).constrain(min: 0.1, max: 10)
+    let currSubScale = player.mpv.getDouble(MPVOption.Subtitles.subScale).clamped(to: 0.1...10)
     let displaySubScale = Utility.toDisplaySubScale(fromRealSubScale: currSubScale)
     subScaleSlider.doubleValue = displaySubScale + (displaySubScale > 0 ? -1 : 1)
-    customSubDelayTextField.doubleValue = playerCore.mpvController.getDouble(MPVOption.Subtitles.subDelay)
+    let subDelay = player.mpv.getDouble(MPVOption.Subtitles.subDelay)
+    subDelaySlider.doubleValue = subDelay
+    customSubDelayTextField.doubleValue = subDelay
+    redraw(indicator: subDelaySliderIndicator, constraint: subDelaySliderConstraint, slider: subDelaySlider, value: "\(customSubDelayTextField.stringValue)s")
 
-    let fontSize = playerCore.mpvController.getInt(MPVOption.Subtitles.subFontSize)
-    subTextSizePopUp.selectItem(withTitle: fontSize.toStr())
+    let currSubPos = player.mpv.getInt(MPVOption.Subtitles.subPos)
+    subPosSlider.intValue = Int32(currSubPos)
 
-    let borderWidth = playerCore.mpvController.getDouble(MPVOption.Subtitles.subBorderSize)
+    let fontSize = player.mpv.getInt(MPVOption.Subtitles.subFontSize)
+    subTextSizePopUp.selectItem(withTitle: fontSize.description)
+
+    let borderWidth = player.mpv.getDouble(MPVOption.Subtitles.subBorderSize)
     subTextBorderWidthPopUp.selectItem(at: -1)
     subTextBorderWidthPopUp.itemArray.forEach { item in
       if borderWidth == Double(item.title) {
         subTextBorderWidthPopUp.select(item)
       }
     }
-
-    // Equalizer
-    updateVideoEqState()
-    updateAudioEqState()
   }
 
   private func updateVideoEqState() {
-    brightnessSlider.intValue = Int32(playerCore.info.brightness)
-    contrastSlider.intValue = Int32(playerCore.info.contrast)
-    saturationSlider.intValue = Int32(playerCore.info.saturation)
-    gammaSlider.intValue = Int32(playerCore.info.gamma)
-    hueSlider.intValue = Int32(playerCore.info.hue)
+    brightnessSlider.intValue = Int32(player.info.brightness)
+    contrastSlider.intValue = Int32(player.info.contrast)
+    saturationSlider.intValue = Int32(player.info.saturation)
+    gammaSlider.intValue = Int32(player.info.gamma)
+    hueSlider.intValue = Int32(player.info.hue)
   }
 
   private func updateAudioEqState() {
-    if let filter = playerCore.info.audioEqFilter {
+    if let filters = player.info.audioEqFilters {
       withAllAudioEqSliders { slider in
-        slider.doubleValue = Double( filter.params!["e\(slider.tag)"] ?? "" ) ?? 0
+        if let gain = filters[slider.tag]?.stringFormat.dropLast().split(separator: "=").last {
+          slider.doubleValue = Double(gain) ?? 0
+        } else {
+          slider.doubleValue = 0
+        }
       }
     } else {
       withAllAudioEqSliders { $0.doubleValue = 0 }
+    }
+  }
+
+  func reload() {
+    guard isViewLoaded else { return }
+    if currentTab == .audio {
+      audioTableView.reloadData()
+      updateAudioTabControl()
+      updateAudioEqState()
+    } else if currentTab == .video {
+      videoTableView.reloadData()
+      updateVideoTabControl()
+      updateVideoEqState()
+    } else if currentTab == .sub {
+      subTableView.reloadData()
+      secSubTableView.reloadData()
+      updateSubTabControl()
     }
   }
 
@@ -206,42 +282,28 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
   /** Switch tab (for internal call) */
   private func switchToTab(_ tab: TabViewType) {
     let button: NSButton
-    let tabIndex: Int
     switch tab {
     case .video:
       button = videoTabBtn
-      tabIndex = 0
     case .audio:
       button = audioTabBtn
-      tabIndex = 1
     case .sub:
       button = subTabBtn
-      tabIndex = 2
     default:
       return
     }
-    tabView.selectTabViewItem(at: tabIndex)
-    // cancel current active button
-    for btn in [videoTabBtn, audioTabBtn, subTabBtn] {
-      if let btn = btn {
-        let title = btn.title
-        btn.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleFontAttributes)
-      }
-    }
-    // the active one
-    let title = button.title
-    button.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleActiveFontAttributes)
+    tabBtnAction(button)
   }
 
   // MARK: - NSTableView delegate
 
   func numberOfRows(in tableView: NSTableView) -> Int {
     if tableView == videoTableView {
-      return playerCore.info.videoTracks.count + 1
+      return player.info.videoTracks.count + 1
     } else if tableView == audioTableView {
-      return playerCore.info.audioTracks.count + 1
+      return player.info.audioTracks.count + 1
     } else if tableView == subTableView || tableView == secSubTableView {
-      return playerCore.info.subTracks.count + 1
+      return player.info.subTracks.count + 1
     } else {
       return 0
     }
@@ -254,44 +316,46 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
     let activeId: Int
     let columnName = tableColumn?.identifier
     if tableView == videoTableView {
-      track = row == 0 ? nil : playerCore.info.videoTracks[row-1]
-      activeId = playerCore.info.vid!
+      track = row == 0 ? nil : player.info.videoTracks[at: row-1]
+      activeId = player.info.vid!
     } else if tableView == audioTableView {
-      track = row == 0 ? nil : playerCore.info.audioTracks[row-1]
-      activeId = playerCore.info.aid!
+      track = row == 0 ? nil : player.info.audioTracks[at: row-1]
+      activeId = player.info.aid!
     } else if tableView == subTableView {
-      track = row == 0 ? nil : playerCore.info.subTracks[row-1]
-      activeId = playerCore.info.sid!
+      track = row == 0 ? nil : player.info.subTracks[at: row-1]
+      activeId = player.info.sid!
     } else if tableView == secSubTableView {
-      track = row == 0 ? nil : playerCore.info.subTracks[row-1]
-      activeId = playerCore.info.secondSid!
+      track = row == 0 ? nil : player.info.subTracks[at: row-1]
+      activeId = player.info.secondSid!
     } else {
       return nil
     }
     // return track data
-    if columnName == Constants.Identifier.isChosen {
+    if columnName == .isChosen {
       let isChosen = track == nil ? (activeId == 0) : (track!.id == activeId)
       return isChosen ? Constants.String.dot : ""
-    } else if columnName == Constants.Identifier.trackName {
-      return track?.readableTitle ?? Constants.String.none
-    } else {
-      return nil
+    } else if columnName == .trackName {
+      return track?.infoString ?? Constants.String.trackNone
+    } else if columnName == .trackId {
+      return track?.idString
     }
+    return nil
   }
 
   func tableViewSelectionDidChange(_ notification: Notification) {
     withAllTableViews { (view, type) in
       if view.numberOfSelectedRows > 0 {
         // note that track ids start from 1
-        self.playerCore.setTrack(view.selectedRow, forType: type)
+        let subId = view.selectedRow > 0 ? player.info.trackList(type)[view.selectedRow-1].id : 0
+        self.player.setTrack(subId, forType: type)
         view.deselectAll(self)
-        view.reloadData()
       }
     }
+    // Revalidate layout and controls
     updateControlsState()
   }
 
-  private func withAllTableViews (_ block: (NSTableView, MPVTrack.TrackType) -> Void) {
+  private func withAllTableViews(_ block: (NSTableView, MPVTrack.TrackType) -> Void) {
     block(audioTableView, .audio)
     block(subTableView, .sub)
     block(secSubTableView, .secondSub)
@@ -307,40 +371,32 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
 
   // MARK: - Actions
 
-  // Tab buttons
+  // MARK: Tab buttons
 
   @IBAction func tabBtnAction(_ sender: NSButton) {
     tabView.selectTabViewItem(at: sender.tag)
-    // cancel current active button
-    [videoTabBtn, audioTabBtn, subTabBtn].forEach { btn in
-      if let btn = btn {
-        let title = btn.title
-        btn.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleFontAttributes)
-      }
-    }
-    // the active one
-    let title = sender.title
-    sender.attributedTitle = NSAttributedString(string: title, attributes: Utility.tabTitleActiveFontAttributes)
+    [videoTabBtn, audioTabBtn, subTabBtn].forEach { Utility.setActive($0, false) }
+    Utility.setActive(sender, true)
+    reload()
   }
 
-  // Video tab
+  // MARK: Video tab
 
   @IBAction func aspectChangedAction(_ sender: NSSegmentedControl) {
-    if let value = sender.label(forSegment: sender.selectedSegment) {
-      playerCore.setVideoAspect(value)
-      mainWindow.displayOSD(.aspect(value))
-    }
+    let aspect = AppData.aspectsInPanel[sender.selectedSegment]
+    player.setVideoAspect(aspect)
+    mainWindow.displayOSD(.aspect(aspect))
   }
 
   @IBAction func cropChangedAction(_ sender: NSSegmentedControl) {
-    if let cropStr = sender.label(forSegment: sender.selectedSegment) {
-      playerCore.setCrop(fromString: cropStr)
-    }
+    let cropStr = AppData.cropsInPanel[sender.selectedSegment]
+    player.setCrop(fromString: cropStr)
+    mainWindow.displayOSD(.crop(cropStr))
   }
 
   @IBAction func rotationChangedAction(_ sender: NSSegmentedControl) {
-    let value = [0, 90, 180, 270][sender.selectedSegment]
-    playerCore.setVideoRotate(value)
+    let value = AppData.rotations[sender.selectedSegment]
+    player.setVideoRotate(value)
     mainWindow.displayOSD(.rotate(value))
   }
 
@@ -348,41 +404,55 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
     let value = customAspectTextField.stringValue
     if value != "" {
       aspectSegment.setSelected(false, forSegment: aspectSegment.selectedSegment)
-      playerCore.setVideoAspect(value)
+      player.setVideoAspect(value)
       mainWindow.displayOSD(.aspect(value))
     }
+  }
+
+  private func redraw(indicator: NSTextField, constraint: NSLayoutConstraint, slider: NSSlider, value: String) {
+    indicator.stringValue = value
+    let offset: CGFloat = 6
+    let sliderInnerWidth = slider.frame.width - offset * 2
+    constraint.constant = offset + sliderInnerWidth * CGFloat((slider.doubleValue - slider.minValue) / (slider.maxValue - slider.minValue))
+    view.layout()
   }
 
   @IBAction func speedChangedAction(_ sender: NSSlider) {
     // Each step is 64^(1/24)
     //   0       1   ..    7      8      9   ..   24
     // 0.250x 0.297x .. 0.841x 1.000x 1.189x .. 16.00x
+    let eventType = NSApp.currentEvent!.type
+    if eventType == .leftMouseDown {
+      sender.allowsTickMarkValuesOnly = true
+    }
+    if eventType == .leftMouseUp {
+      sender.allowsTickMarkValuesOnly = false
+    }
     let sliderValue = sender.doubleValue
-    let value = AppData.minSpeed * pow((AppData.maxSpeed / AppData.minSpeed), sliderValue / sliderSteps)
-    let speed = String(format: "%.2f", value)
-    speedSliderIndicator.stringValue = "\(speed)x"
-    customSpeedTextField.stringValue = speed
-    let knobPos = sender.knobPointPosition()
-    speedSliderIndicator.setFrameOrigin(NSPoint(x: knobPos - sliderIndicatorHalfWidth, y: sender.frame.origin.y + distanceBetweenSliderAndIndicator))
-    playerCore.setSpeed(value)
+    let value = AppData.minSpeed * pow(AppData.maxSpeed / AppData.minSpeed, sliderValue / sliderSteps)
+    customSpeedTextField.doubleValue = value
+    player.setSpeed(value)
+    redraw(indicator: speedSliderIndicator, constraint: speedSliderConstraint, slider: speedSlider, value: "\(customSpeedTextField.stringValue)x")
   }
 
   @IBAction func customSpeedEditFinishedAction(_ sender: NSTextField) {
-    var value = customSpeedTextField.doubleValue
-    value = max(min(value, AppData.maxSpeed), AppData.minSpeed)
-    customSpeedTextField.stringValue = String(format: "%.2f", value)
+    if sender.stringValue.isEmpty {
+      sender.stringValue = "1"
+    }
+    let value = customSpeedTextField.doubleValue
     let sliderValue = log(value / AppData.minSpeed) / log(AppData.maxSpeed / AppData.minSpeed) * sliderSteps
     speedSlider.doubleValue = sliderValue
-    if playerCore.info.playSpeed != value {
-      playerCore.setSpeed(value)
+    if player.info.playSpeed != value {
+      player.setSpeed(value)
     }
+    redraw(indicator: speedSliderIndicator, constraint: speedSliderConstraint, slider: speedSlider, value: "\(sender.stringValue)x")
     if let window = sender.window {
       window.makeFirstResponder(window.contentView)
     }
   }
 
   @IBAction func deinterlaceBtnAction(_ sender: AnyObject) {
-    playerCore.toggleDeinterlace(deinterlaceCheckBtn.state == NSOnState)
+    player.toggleDeinterlace(deinterlaceCheckBtn.state == .on)
   }
 
   @IBAction func equalizerSliderAction(_ sender: NSSlider) {
@@ -401,7 +471,7 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
     default:
       return
     }
-    playerCore.setVideoEqualizer(forOption: type, value: Int(sender.intValue))
+    player.setVideoEqualizer(forOption: type, value: Int(sender.intValue))
   }
 
   // use tag for buttons
@@ -427,99 +497,189 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
     default:
       return
     }
-    playerCore.setVideoEqualizer(forOption: type, value: 0)
+    player.setVideoEqualizer(forOption: type, value: 0)
     slider?.intValue = 0
   }
 
-  @IBAction func cropBtnAcction(_ sender: AnyObject) {
+  @IBAction func cropBtnAction(_ sender: AnyObject) {
     mainWindow.hideSideBar {
-      self.mainWindow.enterInteractiveMode()
+      self.mainWindow.enterInteractiveMode(.crop, selectWholeVideoByDefault: true)
     }
   }
 
-  // Audio tab
+  // MARK: Audio tab
 
   @IBAction func loadExternalAudioAction(_ sender: NSButton) {
-    let result = Utility.quickOpenPanel(title: "Load external audio file", isDir: false) { url in
-      self.playerCore.loadExternalAudioFile(url)
-    }
-    if result {
-      audioTableView.reloadData()
+    let currentDir = player.info.currentURL?.deletingLastPathComponent()
+    Utility.quickOpenPanel(title: "Load external audio file", chooseDir: false, dir: currentDir) { url in
+      self.player.loadExternalAudioFile(url)
+      self.audioTableView.reloadData()
     }
   }
 
   @IBAction func audioDelayChangedAction(_ sender: NSSlider) {
+    let eventType = NSApp.currentEvent!.type
+    if eventType == .leftMouseDown {
+      sender.allowsTickMarkValuesOnly = true
+    }
+    if eventType == .leftMouseUp {
+      sender.allowsTickMarkValuesOnly = false
+    }
     let sliderValue = sender.doubleValue
-    audioDelaySliderIndicator.stringValue = "\(sliderValue)s"
-    let knobPos = sender.knobPointPosition()
-    audioDelaySliderIndicator.setFrameOrigin(NSPoint(x: knobPos - sliderIndicatorHalfWidth, y: sender.frame.origin.y + distanceBetweenSliderAndIndicator))
+    customAudioDelayTextField.doubleValue = sliderValue
+    redraw(indicator: audioDelaySliderIndicator, constraint: audioDelaySliderConstraint, slider: audioDelaySlider, value: "\(customAudioDelayTextField.stringValue)s")
     if let event = NSApp.currentEvent {
       if event.type == .leftMouseUp {
-        playerCore.setAudioDelay(sliderValue)
+        player.setAudioDelay(sliderValue)
       }
     }
   }
 
-  @IBAction func customAudioDelayEditFinishedAction(_ sender: AnyObject?) {
-    let value = customAudioDelayTextField.doubleValue
-    playerCore.setAudioDelay(value)
+  @IBAction func customAudioDelayEditFinishedAction(_ sender: NSTextField) {
+    if sender.stringValue.isEmpty {
+      sender.stringValue = "0"
+    }
+    let value = sender.doubleValue
+    player.setAudioDelay(value)
+    audioDelaySlider.doubleValue = value
+    redraw(indicator: audioDelaySliderIndicator, constraint: audioDelaySliderConstraint, slider: audioDelaySlider, value: "\(sender.stringValue)s")
   }
 
   @IBAction func audioEqSliderAction(_ sender: NSSlider) {
-    let params: [String: String] = [
-      "e0": audioEqSlider1.stringValue,
-      "e1": audioEqSlider2.stringValue,
-      "e2": audioEqSlider3.stringValue,
-      "e3": audioEqSlider4.stringValue,
-      "e4": audioEqSlider5.stringValue,
-      "e5": audioEqSlider6.stringValue,
-      "e6": audioEqSlider7.stringValue,
-      "e7": audioEqSlider8.stringValue,
-      "e8": audioEqSlider9.stringValue,
-      "e9": audioEqSlider10.stringValue,
-    ]
-    let filter = MPVFilter(name: "equalizer", label: nil, params: params)
-    playerCore.setAudioEq(fromFilter: filter)
+    player.setAudioEq(fromGains: [
+      audioEqSlider1.doubleValue,
+      audioEqSlider2.doubleValue,
+      audioEqSlider3.doubleValue,
+      audioEqSlider4.doubleValue,
+      audioEqSlider5.doubleValue,
+      audioEqSlider6.doubleValue,
+      audioEqSlider7.doubleValue,
+      audioEqSlider8.doubleValue,
+      audioEqSlider9.doubleValue,
+      audioEqSlider10.doubleValue,
+      ])
   }
 
   @IBAction func resetAudioEqAction(_ sender: AnyObject) {
-    playerCore.removeAudioEqFilter()
+    player.removeAudioEqFilter()
+    updateAudioEqState()
   }
 
 
-  // Sub tab
+  // MARK: Sub tab
 
-  @IBAction func loadExternalSubAction(_ sender: NSButton) {
-    let result = Utility.quickOpenPanel(title: "Load external subtitle", isDir: false) { url in
-      self.playerCore.loadExternalSubFile(url)
+  @IBAction func loadExternalSubAction(_ sender: NSSegmentedControl) {
+    if sender.selectedSegment == 0 {
+      let currentDir = player.info.currentURL?.deletingLastPathComponent()
+      Utility.quickOpenPanel(title: "Load external subtitle", chooseDir: false, dir: currentDir) { url in
+        // set a delay
+        self.player.loadExternalSubFile(url, delay: true)
+        self.subTableView.reloadData()
+        self.secSubTableView.reloadData()
+      }
+    } else if sender.selectedSegment == 1 {
+      showSubChooseMenu(forView: sender)
     }
-    if result {
-      subTableView.reloadData()
-      secSubTableView.reloadData()
+  }
+
+  func showSubChooseMenu(forView view: NSView, showLoadedSubs: Bool = false) {
+    let activeSubs = player.info.trackList(.sub) + player.info.trackList(.secondSub)
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    // loaded subtitles
+    if showLoadedSubs {
+      if player.info.subTracks.isEmpty {
+        menu.addItem(withTitle: NSLocalizedString("subtrack.no_loaded", comment: "No subtitles loaded"), enabled: false)
+      } else {
+        menu.addItem(withTitle: NSLocalizedString("track.none", comment: "<None>"),
+                     action: #selector(self.chosenSubFromMenu(_:)), target: self,
+                     stateOn: player.info.sid == 0 ? true : false)
+
+        for sub in player.info.subTracks {
+          menu.addItem(withTitle: sub.readableTitle,
+                       action: #selector(self.chosenSubFromMenu(_:)),
+                       target: self,
+                       obj: sub,
+                       stateOn: sub.id == player.info.sid ? true : false)
+        }
+      }
+      menu.addItem(NSMenuItem.separator())
     }
+    // external subtitles
+    let addMenuItem = { (sub: FileInfo) -> Void in
+      let isActive = !showLoadedSubs && activeSubs.contains { $0.externalFilename == sub.path }
+      menu.addItem(withTitle: "\(sub.filename).\(sub.ext)",
+                   action: #selector(self.chosenSubFromMenu(_:)),
+                   target: self,
+                   obj: sub,
+                   stateOn: isActive ? true : false)
+
+    }
+    if player.info.currentSubsInfo.isEmpty {
+      menu.addItem(withTitle: NSLocalizedString("subtrack.no_external", comment: "No external subtitles found"),
+                   enabled: false)
+    } else {
+      if let videoInfo = player.info.currentVideosInfo.first(where: { $0.url == player.info.currentURL }),
+        !videoInfo.relatedSubs.isEmpty {
+        videoInfo.relatedSubs.forEach(addMenuItem)
+        menu.addItem(NSMenuItem.separator())
+      }
+      player.info.currentSubsInfo.sorted { (f1, f2) in
+        return f1.filename.localizedStandardCompare(f2.filename) == .orderedAscending
+      }.forEach(addMenuItem)
+    }
+    NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: view)
+  }
+
+  @objc func chosenSubFromMenu(_ sender: NSMenuItem) {
+    if let fileInfo = sender.representedObject as? FileInfo {
+      player.loadExternalSubFile(fileInfo.url)
+    } else if let sub = sender.representedObject as? MPVTrack {
+      player.setTrack(sub.id, forType: .sub)
+    } else {
+      player.setTrack(0, forType: .sub)
+    }
+  }
+
+  @IBAction func searchOnlineAction(_ sender: AnyObject) {
+    mainWindow.menuActionHandler.menuFindOnlineSub(.dummy)
   }
 
   @IBAction func subDelayChangedAction(_ sender: NSSlider) {
+    let eventType = NSApp.currentEvent!.type
+    if eventType == .leftMouseDown {
+      sender.allowsTickMarkValuesOnly = true
+    }
+    if eventType == .leftMouseUp {
+      sender.allowsTickMarkValuesOnly = false
+    }
     let sliderValue = sender.doubleValue
-    subDelaySliderIndicator.stringValue = "\(sliderValue)s"
-    let knobPos = sender.knobPointPosition()
-    subDelaySliderIndicator.setFrameOrigin(NSPoint(x: knobPos - sliderIndicatorHalfWidth, y: sender.frame.origin.y + distanceBetweenSliderAndIndicator))
+    customSubDelayTextField.doubleValue = sliderValue
+    redraw(indicator: subDelaySliderIndicator, constraint: subDelaySliderConstraint, slider: subDelaySlider, value: "\(customSubDelayTextField.stringValue)s")
     if let event = NSApp.currentEvent {
       if event.type == .leftMouseUp {
-        playerCore.setSubDelay(sliderValue)
-        customSubDelayTextField.doubleValue = sliderValue
+        player.setSubDelay(sliderValue)
       }
     }
   }
 
-  @IBAction func customSubDelayEditFinishedAction(_ sender: AnyObject?) {
-    let value = customSubDelayTextField.doubleValue
-    playerCore.setSubDelay(value)
+  @IBAction func customSubDelayEditFinishedAction(_ sender: NSTextField) {
+    if sender.stringValue.isEmpty {
+      sender.stringValue = "0"
+    }
+    let value = sender.doubleValue
+    player.setSubDelay(value)
+    subDelaySlider.doubleValue = value
+    redraw(indicator: subDelaySliderIndicator, constraint: subDelaySliderConstraint, slider: subDelaySlider, value: "\(sender.stringValue)s")
   }
 
   @IBAction func subScaleReset(_ sender: AnyObject) {
-    playerCore.setSubScale(1)
+    player.setSubScale(1)
     subScaleSlider.doubleValue = 0
+  }
+
+  @IBAction func subPosSliderAction(_ sender: NSSlider) {
+    player.setSubPos(Int(sender.intValue))
   }
 
   @IBAction func subScaleSliderAction(_ sender: NSSlider) {
@@ -533,40 +693,46 @@ class QuickSettingViewController: NSViewController, NSTableViewDataSource, NSTab
       mappedValue = round((value - 1) * 20) / 20
       realValue = 1 / mappedValue
     }
-    playerCore.setSubScale(realValue)
+    player.setSubScale(realValue)
   }
 
   @IBAction func subTextColorAction(_ sender: AnyObject) {
-    playerCore.setSubTextColor(subTextColorWell.color.mpvColorString)
+    player.setSubTextColor(subTextColorWell.color.mpvColorString)
   }
 
   @IBAction func subTextSizeAction(_ sender: AnyObject) {
     if let selectedItem = subTextSizePopUp.selectedItem {
       if let value = Double(selectedItem.title) {
-        playerCore.setSubTextSize(value)
+        player.setSubTextSize(value)
       }
     }
   }
 
   @IBAction func subTextBorderColorAction(_ sender: AnyObject) {
-    playerCore.setSubTextBorderColor(subTextBorderColorWell.color.mpvColorString)
+    player.setSubTextBorderColor(subTextBorderColorWell.color.mpvColorString)
   }
 
   @IBAction func subTextBorderWidthAction(_ sender: AnyObject) {
     if let value = Double(subTextBorderWidthPopUp.stringValue) {
-      playerCore.setSubTextBorderSize(value)
+      player.setSubTextBorderSize(value)
     }
   }
 
   @IBAction func subTextBgColorAction(_ sender: AnyObject) {
-    playerCore.setSubTextBgColor(subTextBgColorWell.color.mpvColorString)
+    player.setSubTextBgColor(subTextBgColorWell.color.mpvColorString)
   }
 
   @IBAction func subFontAction(_ sender: AnyObject) {
     Utility.quickFontPickerWindow() {
-      self.playerCore.setSubFont($0 ?? "")
+      self.player.setSubFont($0 ?? "")
     }
   }
 
+
+}
+
+class QuickSettingView: NSView {
+
+  override func mouseDown(with event: NSEvent) {}
 
 }

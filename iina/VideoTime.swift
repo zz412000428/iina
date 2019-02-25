@@ -3,12 +3,15 @@
 //  iina
 //
 //  Created by lhc on 25/7/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Foundation
 
 class VideoTime {
+
+  static let infinite = VideoTime(999, 0, 0)
+  static let zero = VideoTime(0)
 
   var second: Double
 
@@ -43,7 +46,7 @@ class VideoTime {
   }
 
   convenience init?(_ format: String) {
-    let split = format.characters.split(separator: ":").map { (seq) -> Int? in
+    let split = format.split(separator: ":").map { (seq) -> Int? in
       return Int(String(seq))
     }
     if !(split.contains {$0 == nil}) {
@@ -90,4 +93,16 @@ func ==(lhs: VideoTime, rhs: VideoTime) -> Bool {
 
 func *(lhs: VideoTime, rhs: Double) -> VideoTime {
   return VideoTime(lhs.second * rhs)
+}
+
+func /(lhs: VideoTime?, rhs: VideoTime?) -> Double? {
+  if let lhs = lhs, let rhs = rhs {
+    return lhs.second / rhs.second
+  } else {
+    return nil
+  }
+}
+
+func -(lhs: VideoTime, rhs: VideoTime) -> VideoTime {
+  return VideoTime(lhs.second - rhs.second)
 }

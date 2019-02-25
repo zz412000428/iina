@@ -37,10 +37,10 @@ struct MPVProperty {
   static let avsync = "avsync"
   /** total-avsync-change */
   static let totalAvsyncChange = "total-avsync-change"
-  /** drop-frame-count */
-  static let dropFrameCount = "drop-frame-count"
-  /** vo-drop-frame-count */
-  static let voDropFrameCount = "vo-drop-frame-count"
+  /** decoder-frame-drop-count */
+  static let decoderFrameDropCount = "decoder-frame-drop-count"
+  /** frame-drop-count */
+  static let frameDropCount = "frame-drop-count"
   /** mistimed-frame-count */
   static let mistimedFrameCount = "mistimed-frame-count"
   /** vsync-ratio */
@@ -137,6 +137,22 @@ struct MPVProperty {
   static let demuxerCacheTime = "demuxer-cache-time"
   /** demuxer-cache-idle */
   static let demuxerCacheIdle = "demuxer-cache-idle"
+  /** demuxer-cache-state */
+  static let demuxerCacheState = "demuxer-cache-state"
+  /** eof */
+  static let eof = "eof"
+  /** underrun */
+  static let underrun = "underrun"
+  /** idle */
+  static let idle = "idle"
+  /** total-bytes */
+  static let totalBytes = "total-bytes"
+  /** fw-bytes */
+  static let fwBytes = "fw-bytes"
+  /** demuxer-via-network */
+  static let demuxerViaNetwork = "demuxer-via-network"
+  /** demuxer-start-time */
+  static let demuxerStartTime = "demuxer-start-time"
   /** paused-for-cache */
   static let pausedForCache = "paused-for-cache"
   /** cache-buffering-state */
@@ -217,10 +233,10 @@ struct MPVProperty {
   static let videoParamsPrimaries = "video-params/primaries"
   /** video-params/gamma */
   static let videoParamsGamma = "video-params/gamma"
-  /** video-params/nom-peak */
-  static let videoParamsNomPeak = "video-params/nom-peak"
   /** video-params/sig-peak */
   static let videoParamsSigPeak = "video-params/sig-peak"
+  /** video-params/light */
+  static let videoParamsLight = "video-params/light"
   /** video-params/chroma-location */
   static let videoParamsChromaLocation = "video-params/chroma-location"
   /** video-params/rotate */
@@ -269,8 +285,6 @@ struct MPVProperty {
   static let dvbChannelName = "dvb-channel-name"
   /** sub-text */
   static let subText = "sub-text"
-  /** stream-capture */
-  static let streamCapture = "stream-capture"
   /** tv-brightness */
   static let tvBrightness = "tv-brightness"
   /** tv-contrast */
@@ -287,6 +301,8 @@ struct MPVProperty {
   static let playlistCount = "playlist-count"
   /** playlist */
   static let playlist = "playlist"
+  /** playlist/count */
+  static let playlistCount2 = "playlist/count"
   /** playlist/N/filename */
   static func playlistNFilename(_ n: Int) -> String {
     return "playlist/\(n)/filename"
@@ -437,20 +453,34 @@ struct MPVProperty {
   static let osdAssCc = "osd-ass-cc"
   /** vo-configured */
   static let voConfigured = "vo-configured"
-  /** vo-performance */
-  static let voPerformance = "vo-performance"
-  /** upload */
-  static let upload = "upload"
-  /** render */
-  static let render = "render"
-  /** present */
-  static let present = "present"
-  /** last */
-  static let last = "last"
-  /** avg */
-  static let avg = "avg"
-  /** peak */
-  static let peak = "peak"
+  /** vo-passes */
+  static let voPasses = "vo-passes"
+  /** vo-passes/TYPE/count */
+  static let voPassesTYPECount = "vo-passes/TYPE/count"
+  /** vo-passes/TYPE/N/desc */
+  static func voPassesTYPENDesc(_ n: Int) -> String {
+    return "vo-passes/TYPE/\(n)/desc"
+  }
+  /** vo-passes/TYPE/N/last */
+  static func voPassesTYPENLast(_ n: Int) -> String {
+    return "vo-passes/TYPE/\(n)/last"
+  }
+  /** vo-passes/TYPE/N/avg */
+  static func voPassesTYPENAvg(_ n: Int) -> String {
+    return "vo-passes/TYPE/\(n)/avg"
+  }
+  /** vo-passes/TYPE/N/peak */
+  static func voPassesTYPENPeak(_ n: Int) -> String {
+    return "vo-passes/TYPE/\(n)/peak"
+  }
+  /** vo-passes/TYPE/N/count */
+  static func voPassesTYPENCount(_ n: Int) -> String {
+    return "vo-passes/TYPE/\(n)/count"
+  }
+  /** vo-passes/TYPE/N/samples/M */
+  static func voPassesTYPENSamplesM(_ n: Int) -> String {
+    return "vo-passes/TYPE/\(n)/samples/M"
+  }
   /** video-bitrate */
   static let videoBitrate = "video-bitrate"
   /** audio-bitrate */
@@ -471,16 +501,12 @@ struct MPVProperty {
   static let currentVo = "current-vo"
   /** current-ao */
   static let currentAo = "current-ao"
-  /** audio-out-detected-device */
-  static let audioOutDetectedDevice = "audio-out-detected-device"
   /** working-directory */
   static let workingDirectory = "working-directory"
   /** protocol-list */
   static let protocolList = "protocol-list"
   /** decoder-list */
   static let decoderList = "decoder-list"
-  /** family */
-  static let family = "family"
   /** codec */
   static let codec = "codec"
   /** driver */
@@ -489,6 +515,8 @@ struct MPVProperty {
   static let description = "description"
   /** encoder-list */
   static let encoderList = "encoder-list"
+  /** demuxer-lavf-list */
+  static let demuxerLavfList = "demuxer-lavf-list"
   /** mpv-version */
   static let mpvVersion = "mpv-version"
   /** mpv-configuration */

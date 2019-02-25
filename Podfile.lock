@@ -1,15 +1,50 @@
 PODS:
-  - Just (0.5.7)
-  - MASPreferences (1.1.4)
+  - GRMustache.swift (2.0.0)
+  - GzipSwift (4.0.4)
+  - Just (0.7.1)
+  - PromiseKit (6.8.3):
+    - PromiseKit/CorePromise (= 6.8.3)
+    - PromiseKit/Foundation (= 6.8.3)
+    - PromiseKit/UIKit (= 6.8.3)
+  - PromiseKit/CorePromise (6.8.3)
+  - PromiseKit/Foundation (6.8.3):
+    - PromiseKit/CorePromise
+  - Sparkle (1.21.2)
 
 DEPENDENCIES:
-  - Just
-  - MASPreferences
+  - GRMustache.swift (from `https://github.com/iina/GRMustache.swift.git`)
+  - GzipSwift
+  - Just (from `https://github.com/JustHTTP/Just.git`)
+  - PromiseKit
+  - Sparkle
+
+SPEC REPOS:
+  https://github.com/cocoapods/specs.git:
+    - GzipSwift
+    - PromiseKit
+    - Sparkle
+
+EXTERNAL SOURCES:
+  GRMustache.swift:
+    :git: https://github.com/iina/GRMustache.swift.git
+  Just:
+    :git: https://github.com/JustHTTP/Just.git
+
+CHECKOUT OPTIONS:
+  GRMustache.swift:
+    :commit: 3e6778e4b8a134e3f96d04d6c15c7213bd7d9935
+    :git: https://github.com/iina/GRMustache.swift.git
+  Just:
+    :commit: b314be4ac8652b66182cfbd4a9893dfcb3808bbf
+    :git: https://github.com/JustHTTP/Just.git
 
 SPEC CHECKSUMS:
-  Just: d19e769d86b965e39ae58cb3c0cbad07706634a8
-  MASPreferences: 7bdcfe891d7840453cf48f95fa866c3e152ace7a
+  GRMustache.swift: 53405b02c374520f9193cf41bfa677f03a6d70aa
+  GzipSwift: 1a5bc5f7827e09846b0635b5079f1224bc3b1c3a
+  Just: 60c0995e04718eb621a07abef45ce6883c562f2b
+  PromiseKit: 94c6e781838c5bf4717677d0d882b0e7250c80fc
+  Sparkle: 1678d4707e7665960c7d1b43aca125e6392d11c4
 
-PODFILE CHECKSUM: 1660afcf8e29f4d915d2c02e6adc97cd9068a0dd
+PODFILE CHECKSUM: c149e2f5a370325310fa22313fe8c514d0967750
 
-COCOAPODS: 1.2.0.beta.3
+COCOAPODS: 1.6.0

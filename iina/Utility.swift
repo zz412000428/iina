@@ -3,126 +3,319 @@
 //  iina
 //
 //  Created by lhc on 8/7/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Cocoa
 
 class Utility {
 
-  static let tabTitleFontAttributes = FontAttributes(font: .system, size: .system, align: .center).value
-  static let tabTitleActiveFontAttributes = FontAttributes(font: .systemBold, size: .system, align: .center).value
+  static let supportedFileExt: [MPVTrack.TrackType: [String]] = [
+    .video: ["mkv", "mp4", "avi", "m4v", "mov", "3gp", "ts", "mts", "m2ts", "wmv", "flv", "f4v", "asf", "webm", "rm", "rmvb", "qt", "dv", "mpg", "mpeg", "mxf", "vob", "gif"],
+    .audio: ["mp3", "aac", "mka", "dts", "flac", "ogg", "oga", "mogg", "m4a", "ac3", "opus", "wav", "wv", "aiff", "ape", "tta", "tak"],
+    .sub: ["utf", "utf8", "utf-8", "idx", "sub", "srt", "smi", "rt", "ssa", "aqt", "jss", "js", "ass", "mks", "vtt", "sup", "scc"]
+  ]
+  static let playableFileExt = supportedFileExt[.video]! + supportedFileExt[.audio]!
+  static let singleFilePlaylistExt = ["cue"]
+  static let multipleFilePlaylistExt = ["m3u", "m3u8", "pls"]
+  static let playlistFileExt = singleFilePlaylistExt + multipleFilePlaylistExt
+  static let blacklistExt = supportedFileExt[.sub]! + multipleFilePlaylistExt
+  static let lut3dExt = ["3dl", "cube", "dat", "m3d"]
 
   // MARK: - Logs, alerts
 
-  static func showAlert(message: String, alertStyle: NSAlertStyle = .critical) {
+  @available(*, deprecated, message: "showAlert(message:alertStyle:) is deprecated, use showAlert(_ key:comment:arguments:alertStyle:) instead")
+  static func showAlert(message: String, alertStyle: NSAlert.Style = .critical) {
     let alert = NSAlert()
     switch alertStyle {
     case .critical:
-      alert.messageText = "Error"
+      alert.messageText = NSLocalizedString("alert.title_error", comment: "Error")
     case .informational:
-      alert.messageText = "Information"
+      alert.messageText = NSLocalizedString("alert.title_info", comment: "Information")
     case .warning:
-      alert.messageText = "Warning"
+      alert.messageText = NSLocalizedString("alert.title_warning", comment: "Warning")
     }
     alert.informativeText = message
     alert.alertStyle = alertStyle
     alert.runModal()
   }
 
-  static func log(_ message: String) {
-    NSLog("%@", message)
-  }
-
-  static func assert(_ expr: Bool, _ errorMessage: String, _ block: () -> Void = {}) {
-    if !expr {
-      NSLog("%@", errorMessage)
-      showAlert(message: "Fatal error: \(errorMessage) \nThe application will exit now.")
-      block()
-      exit(1)
+  static func showAlert(_ key: String, comment: String? = nil, arguments: [CVarArg]? = nil, style: NSAlert.Style = .critical, sheetWindow: NSWindow? = nil) {
+    let alert = NSAlert()
+    switch style {
+    case .critical:
+      alert.messageText = NSLocalizedString("alert.title_error", comment: "Error")
+    case .informational:
+      alert.messageText = NSLocalizedString("alert.title_info", comment: "Information")
+    case .warning:
+      alert.messageText = NSLocalizedString("alert.title_warning", comment: "Warning")
     }
-  }
 
-  static func fatal(_ message: String, _ block: () -> Void = {}) {
-    NSLog("%@", message)
-    NSLog(Thread.callStackSymbols.joined(separator: "\n"))
-    showAlert(message: "Fatal error: \(message) \nThe application will exit now.")
-    block()
-    exit(1)
+    var format: String
+    if let stringComment = comment {
+      format = NSLocalizedString("alert." + key, comment: stringComment)
+    } else {
+      format = NSLocalizedString("alert." + key, comment: key)
+    }
+
+    if let stringArguments = arguments {
+      alert.informativeText = String(format: format, arguments: stringArguments)
+    } else {
+      alert.informativeText = String(format: format)
+    }
+
+    alert.alertStyle = style
+    if let sheetWindow = sheetWindow {
+      alert.beginSheetModal(for: sheetWindow)
+    } else {
+      alert.runModal()
+    }
   }
 
   // MARK: - Panels, Alerts
 
-  static func quickAskPanel(title: String, infoText: String) -> Bool {
+  /**
+   Pop up an ask panel.
+   - Parameters:
+     - key: A localization key. "alert.`key`.title" will be used as alert title, and "alert.`key`.message" will be the informative text.
+     - titleComment: (Optional) Comment for title key.
+     - messageComment: (Optional) Comment for message key.
+     - sheetWindow: (Optional) The window on which to display the sheet; if this value is nil then run modal.
+     - callback: (Optional) Completion handler used by sheet modal.
+   - Returns: Whether user dismissed the panel by clicking OK, discardable when using sheet.
+   */
+  @discardableResult
+  static func quickAskPanel(_ key: String, titleComment: String? = nil, messageComment: String? = nil, sheetWindow: NSWindow? = nil, callback: ((NSApplication.ModalResponse) -> Void)? = nil) -> Bool {
     let panel = NSAlert()
-    panel.messageText = title
-    panel.informativeText = infoText
-    panel.addButton(withTitle: "OK")
-    panel.addButton(withTitle: "Cancel")
-    return panel.runModal() == NSAlertFirstButtonReturn
-  }
+    let titleKey = "alert." + key + ".title"
+    let messageKey = "alert." + key + ".message"
+    panel.messageText = NSLocalizedString(titleKey, comment: titleComment ?? titleKey)
+    panel.informativeText = NSLocalizedString(messageKey, comment: messageComment ?? messageKey)
+    panel.addButton(withTitle: NSLocalizedString("general.ok", comment: "OK"))
+    panel.addButton(withTitle: NSLocalizedString("general.cancel", comment: "Cancel"))
 
-  static func quickOpenPanel(title: String, isDir: Bool, ok: (URL) -> Void) -> Bool {
-    let panel = NSOpenPanel()
-    panel.title = title
-    panel.canCreateDirectories = false
-    panel.canChooseFiles = !isDir
-    panel.canChooseDirectories = isDir
-    panel.resolvesAliases = true
-    panel.allowsMultipleSelection = false
-    if panel.runModal() == NSFileHandlingPanelOKButton {
-      if let url = panel.url {
-        ok(url)
-      }
-      return true
-    } else {
+    if let sheetWindow = sheetWindow {
+      panel.beginSheetModal(for: sheetWindow, completionHandler: callback)
       return false
+    } else {
+      return panel.runModal() == .alertFirstButtonReturn
     }
   }
 
-  static func quickPromptPanel(messageText: String, informativeText: String, ok: (String) -> Void) -> Bool {
+  /**
+   Pop up an open panel.
+   - Parameters:
+     - title: Title of the panel.
+     - chooseDir: Chooses directories or not; if false, then only choose files.
+     - dir: (Optional) Base directory.
+     - sheetWindow: (Optional) The window on which to display the sheet.
+     - callback: (Optional) Completion handler.
+   */
+  static func quickOpenPanel(title: String, chooseDir: Bool, dir: URL? = nil, sheetWindow: NSWindow? = nil, allowedFileTypes: [String]? = nil, callback: @escaping (URL) -> Void) {
+    let panel = NSOpenPanel()
+    panel.title = title
+    panel.canCreateDirectories = false
+    panel.canChooseFiles = !chooseDir
+    panel.canChooseDirectories = chooseDir
+    panel.resolvesAliases = true
+    panel.allowedFileTypes = allowedFileTypes
+    panel.allowsMultipleSelection = false
+    panel.level = .modalPanel
+    if let dir = dir {
+      panel.directoryURL = dir
+    }
+    let handler: (NSApplication.ModalResponse) -> Void = { result in
+      if result == .OK, let url = panel.url {
+        callback(url)
+      }
+    }
+    if let sheetWindow = sheetWindow {
+      panel.beginSheetModal(for: sheetWindow, completionHandler: handler)
+    } else {
+      panel.begin(completionHandler: handler)
+    }
+  }
+
+  /**
+   Pop up an open panel.
+   - Parameters
+     - title: Title of the panel.
+     - dir: (Optional) Base directory.
+     - sheetWindow: (Optional) The window on which to display the sheet.
+     - callback: (Optional) Completion handler.
+   */
+  static func quickMultipleOpenPanel(title: String, dir: URL? = nil, canChooseDir: Bool, callback: @escaping ([URL]) -> Void) {
+    let panel = NSOpenPanel()
+    panel.title = title
+    panel.canCreateDirectories = false
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = canChooseDir
+    panel.resolvesAliases = true
+    panel.allowsMultipleSelection = true
+    if let dir = dir {
+      panel.directoryURL = dir
+    }
+    panel.begin() { result in
+      if result == .OK {
+        callback(panel.urls)
+      }
+    }
+  }
+
+  /**
+   Pop up a save panel.
+   */
+  static func quickSavePanel(title: String, types: [String], sheetWindow: NSWindow? = nil, callback: @escaping (URL) -> Void) {
+    let panel = NSSavePanel()
+    panel.title = title
+    panel.canCreateDirectories = true
+    panel.allowedFileTypes = types
+    let handler: (NSApplication.ModalResponse) -> Void = { result in
+      if result == .OK, let url = panel.url {
+        callback(url)
+      }
+    }
+    if let sheetWindow = sheetWindow {
+      panel.beginSheet(sheetWindow, completionHandler: handler)
+    } else {
+      panel.begin(completionHandler: handler)
+    }
+  }
+
+  /**
+   Pop up a prompt panel.
+   - parameters:
+     - key: A localization key. "alert.`key`.title" will be used as alert title, and "alert.`key`.message" will be the informative text.
+     - titleComment: (Optional) Comment for title key.
+     - messageComment: (Optional) Comment for message key.
+     - sheetWindow: (Optional) The window on which to display the sheet.
+     - callback: (Optional) Completion handler.
+   - Returns: Whether user dismissed the panel by clicking OK. Only works when using `.modal` mode.
+   */
+  @discardableResult
+  static func quickPromptPanel(_ key: String, titleComment: String? = nil, messageComment: String? = nil, sheetWindow: NSWindow? = nil, callback: @escaping (String) -> Void) -> Bool {
     let panel = NSAlert()
-    panel.messageText = messageText
-    panel.informativeText = informativeText
-    let input = ShortcutAvailableTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+    let titleKey = "alert." + key + ".title"
+    let messageKey = "alert." + key + ".message"
+    panel.messageText = NSLocalizedString(titleKey, comment: titleComment ?? titleKey)
+    panel.informativeText = NSLocalizedString(messageKey, comment: messageComment ?? messageKey)
+    let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
     input.lineBreakMode = .byClipping
     input.usesSingleLineMode = true
     input.cell?.isScrollable = true
     panel.accessoryView = input
-    panel.addButton(withTitle: "OK")
-    panel.addButton(withTitle: "Cancel")
+    panel.addButton(withTitle: NSLocalizedString("general.ok", comment: "OK"))
+    panel.addButton(withTitle: NSLocalizedString("general.cancel", comment: "Cancel"))
     panel.window.initialFirstResponder = input
-    let response = panel.runModal()
-    if response == NSAlertFirstButtonReturn {
-      ok(input.stringValue)
-      return true
+
+    if let sheetWindow = sheetWindow {
+      panel.beginSheetModal(for: sheetWindow) { response in
+        if response == .alertFirstButtonReturn {
+          callback(input.stringValue)
+        }
+      }
     } else {
-      return false
+      if panel.runModal() == .alertFirstButtonReturn {
+        callback(input.stringValue)
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   Pop up a username and password panel.
+   - parameters:
+     - key: A localization key. "alert.`key`.title" will be used as alert title, and "alert.`key`.message" will be the informative text.
+     - titleComment: (Optional) Comment for title key.
+     - messageComment: (Optional) Comment for message key.
+   - Returns: Whether user dismissed the panel by clicking OK.
+   */
+  static func quickUsernamePasswordPanel(_ key: String, titleComment: String? = nil, messageComment: String? = nil, sheetWindow: NSWindow? = nil, callback: @escaping (String, String) -> Void) {
+    let quickLabel: (String, Int) -> NSTextField = { title, yPos in
+      let label = NSTextField(frame: NSRect(x: 0, y: yPos, width: 240, height: 14))
+      label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+      label.stringValue = title
+      label.drawsBackground = false
+      label.isBezeled = false
+      label.isSelectable = false
+      label.isEditable = false
+      return label
+    }
+    let panel = NSAlert()
+    let titleKey = "alert." + key + ".title"
+    let messageKey = "alert." + key + ".message"
+    panel.messageText = NSLocalizedString(titleKey, comment: titleComment ?? titleKey)
+    panel.informativeText = NSLocalizedString(messageKey, comment: messageComment ?? messageKey)
+    let view = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 82))
+    view.addSubview(quickLabel(NSLocalizedString("general.username", comment: "Username") + ":", 68))
+    let input = NSTextField(frame: NSRect(x: 0, y: 42, width: 240, height: 24))
+    input.lineBreakMode = .byClipping
+    input.usesSingleLineMode = true
+    input.cell?.isScrollable = true
+    view.addSubview(input)
+    view.addSubview(quickLabel(NSLocalizedString("general.password", comment: "Password") + ":", 26))
+    let pwField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+    view.addSubview(pwField)
+    input.nextKeyView = pwField
+    panel.accessoryView = view
+    panel.addButton(withTitle: NSLocalizedString("general.ok", comment: "OK"))
+    panel.addButton(withTitle: NSLocalizedString("general.cancel", comment: "Cancel"))
+    panel.window.initialFirstResponder = input
+    if let sheetWindow = sheetWindow {
+      panel.beginSheetModal(for: sheetWindow) { response in
+        if response == .alertFirstButtonReturn {
+          callback(input.stringValue, pwField.stringValue)
+        }
+      }
+    } else {
+      let response = panel.runModal()
+      if response == .alertFirstButtonReturn {
+        callback(input.stringValue, pwField.stringValue)
+      }
     }
   }
 
-  static func quickFontPickerWindow(ok: @escaping (String?) -> Void) {
+  /**
+   Pop up a font picker panel.
+   - parameters:
+     - callback: A closure accepting the font name.
+   */
+  static func quickFontPickerWindow(callback: @escaping (String?) -> Void) {
     guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
-    appDelegate.fontPicker.finishedPicking = ok
+    appDelegate.fontPicker.finishedPicking = callback
     appDelegate.fontPicker.showWindow(self)
   }
 
   // MARK: - App functions
 
-  private static func createDirIfNotExist(url: URL) {
-  let path = url.path
+  static func iinaVersion() -> (String, String) {
+    let infoDic = Bundle.main.infoDictionary!
+    let version = infoDic["CFBundleShortVersionString"] as! String
+    let build = infoDic["CFBundleVersion"] as! String
+    return (version, build)
+  }
+
+  static func createDirIfNotExist(url: URL) {
+    let path = url.path
     // check exist
     if !FileManager.default.fileExists(atPath: path) {
       do {
-      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false, attributes: nil)
+      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
       } catch {
-        Utility.fatal("Cannot create folder in Application Support directory")
+        Logger.fatal("Cannot create directory: \(url)")
       }
     }
   }
 
+  static private let allTypes: [MPVTrack.TrackType] = [.video, .audio, .sub]
+
+  static func mediaType(forExtension ext: String) -> MPVTrack.TrackType? {
+    return allTypes.first { supportedFileExt[$0]!.contains(ext.lowercased()) }
+  }
+
   static func getFilePath(Configs userConfigs: [String: Any]!, forConfig conf: String, showAlert: Bool = true) -> String? {
-    
+
     // if is default config
     if let dv = PrefKeyBindingViewController.defaultConfigs[conf] {
       return dv
@@ -130,16 +323,16 @@ class Utility {
       return uv
     } else {
       if showAlert {
-        Utility.showAlert(message: "Cannot find config file location!")
+        Utility.showAlert("error_finding_file", arguments: ["config"])
       }
       return nil
     }
   }
-  
+
   static let appSupportDirUrl: URL = {
     // get path
     let asPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-    Utility.assert(asPath.count >= 1, "Cannot get path to Application Support directory")
+    Logger.ensure(asPath.count >= 1, "Cannot get path to Application Support directory")
     let bundleID = Bundle.main.bundleIdentifier!
     let appAsUrl = asPath.first!.appendingPathComponent(bundleID)
     createDirIfNotExist(url: appAsUrl)
@@ -153,9 +346,14 @@ class Utility {
   }()
 
   static let logDirURL: URL = {
-    let url = Utility.appSupportDirUrl.appendingPathComponent(AppData.logFolder, isDirectory: true)
-    createDirIfNotExist(url: url)
-    return url
+    // get path
+    let libraryPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)
+    Logger.ensure(libraryPath.count >= 1, "Cannot get path to Logs directory")
+    let logsUrl = libraryPath.first!.appendingPathComponent("Logs", isDirectory: true)
+    let bundleID = Bundle.main.bundleIdentifier!
+    let appLogsUrl = logsUrl.appendingPathComponent(bundleID, isDirectory: true)
+    createDirIfNotExist(url: appLogsUrl)
+    return appLogsUrl
   }()
 
   static let watchLaterURL: URL = {
@@ -164,15 +362,31 @@ class Utility {
     return url
   }()
 
+  static let thumbnailCacheURL: URL = {
+    // get path
+    let cachesPath = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+    Logger.ensure(cachesPath.count >= 1, "Cannot get path to Caches directory")
+    let bundleID = Bundle.main.bundleIdentifier!
+    let appCachesUrl = cachesPath.first!.appendingPathComponent(bundleID, isDirectory: true)
+    let appThumbnailCacheUrl = appCachesUrl.appendingPathComponent(AppData.thumbnailCacheFolder, isDirectory: true)
+    createDirIfNotExist(url: appThumbnailCacheUrl)
+    return appThumbnailCacheUrl
+  }()
+
+  static let playbackHistoryURL: URL = {
+    return Utility.appSupportDirUrl.appendingPathComponent(AppData.historyFile, isDirectory: false)
+  }()
+
   static let tempDirURL: URL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+
+  static let exeDirURL: URL = URL(fileURLWithPath: Bundle.main.executablePath!).deletingLastPathComponent()
 
 
   // MARK: - Util functions
 
-  static func swap<T>(_ a: inout T, _ b: inout T) {
-    let temp = a
-    a = b
-    b = temp
+  static func setActive(_ button: NSButton, _ active: Bool) {
+    button.attributedTitle = NSAttributedString(string: button.title,
+                                                attributes: FontAttributes(font: active ? .systemBold : .system, size: .system, align: .center).value)
   }
 
   static func toRealSubScale(fromDisplaySubScale scale: Double) -> Double {
@@ -183,41 +397,48 @@ class Utility {
     return realScale >= 1 ? realScale : -1 / realScale
   }
 
-  static func mpvKeyCode(from event: NSEvent) -> String {
-    var keyString = ""
-    let keyChar: String
-    let keyCode = event.keyCode
-    let modifiers = event.modifierFlags
-    // shift
-    guard let keyName = KeyCodeHelper.keyMap[keyCode] else {
-      Utility.log("Undefined key code?")
-      return ""
+  static func quickConstraints(_ constraints: [String], _ views: [String: NSView]) {
+    constraints.forEach { c in
+      let cc = NSLayoutConstraint.constraints(withVisualFormat: c, options: [], metrics: nil, views: views)
+      NSLayoutConstraint.activate(cc)
     }
-    if modifiers.contains(.shift) {
-      if KeyCodeHelper.canBeModifiedByShift(keyCode) {
-        keyChar = keyName.1!
-      } else {
-        keyChar = keyName.0
-        keyString += "Shift+"
-      }
+  }
+
+  /// See `mp_get_playback_resume_config_filename` in mpv/configfiles.c
+  static func mpvWatchLaterMd5(_ filename: String) -> String {
+    // mp_is_url
+    // if(!Regex.mpvURL.matches(filename)) {
+      // ignore_path_in_watch_later_config
+    // }
+    // handle dvd:// and bd://
+    return filename.md5
+  }
+
+  static func playbackProgressFromWatchLater(_ mpvMd5: String) -> VideoTime? {
+    let fileURL = Utility.watchLaterURL.appendingPathComponent(mpvMd5)
+    if let reader = StreamReader(path: fileURL.path),
+      let firstLine = reader.nextLine(),
+      firstLine.hasPrefix("start="),
+      let progressString = firstLine.components(separatedBy: "=").last,
+      let progress = Double(progressString) {
+      return VideoTime(progress)
     } else {
-      keyChar = keyName.0
+      return nil
     }
-    // control
-    if modifiers.contains(.control) {
-      keyString += "Ctrl+"
+  }
+
+  // Do not use this function for macOS 10.14+
+  static func getAppearanceAndMaterial(from theme: Preference.Theme) -> (NSAppearance?, NSVisualEffectView.Material) {
+    switch theme {
+    case .ultraDark:
+      return (NSAppearance(named: .vibrantDark), .ultraDark)
+    case .light:
+      return (NSAppearance(named: .vibrantLight), .light)
+    case .mediumLight:
+      return (NSAppearance(named: .vibrantLight), .mediumLight)
+    default:
+      return (NSAppearance(named: .vibrantDark), .dark)
     }
-    // alt
-    if modifiers.contains(.option) {
-      keyString += "Alt+"
-    }
-    // meta
-    if modifiers.contains(.command) {
-      keyString += "Meta+"
-    }
-    // char
-    keyString += keyChar
-    return keyString
   }
 
   // MARK: - Util classes
@@ -231,6 +452,8 @@ class Utility {
       }
       enum Size {
         case system
+        case small
+        case mini
         case pt(Float)
       }
       enum Font {
@@ -250,14 +473,18 @@ class Utility {
       self.align = align
     }
 
-    var value : [String : AnyObject]? {
+    var value : [NSAttributedString.Key : Any]? {
       get {
         let f: NSFont?
         let s: CGFloat
         let a = NSMutableParagraphStyle()
         switch self.size {
         case .system:
-          s = NSFont.systemFontSize()
+          s = NSFont.systemFontSize
+        case .small:
+          s = NSFont.systemFontSize(for: .small)
+        case .mini:
+          s = NSFont.systemFontSize(for: .mini)
         case .pt(let point):
           s = CGFloat(point)
         }
@@ -278,10 +505,10 @@ class Utility {
           a.alignment = .right
         }
         if let f = f {
-          NSFont.systemFont(ofSize: NSFont.systemFontSize())
+          NSFont.systemFont(ofSize: NSFont.systemFontSize)
           return [
-            NSFontAttributeName: f,
-            NSParagraphStyleAttributeName: a
+            .font: f,
+            .paragraphStyle: a
           ]
         } else {
           return nil
@@ -295,7 +522,7 @@ class Utility {
 
   struct ShortCodeGenerator {
 
-    private static let base62chars = [Character]("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".characters)
+    private static let base62chars = [Character]("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
     private static let maxBase : UInt32 = 62
 
     static func getCode(withBase base: UInt32 = maxBase, length: Int) -> String {
@@ -308,6 +535,13 @@ class Utility {
     }
   }
 
+  static func resolvePaths(_ paths: [String]) -> [String] {
+    return paths.map { (try? URL(resolvingAliasFileAt: URL(fileURLWithPath: $0)))?.path ?? $0 }
+  }
+
+  static func resolveURLs(_ urls: [URL]) -> [URL] {
+    return urls.map { (try? URL(resolvingAliasFileAt: $0)) ?? $0 }
+  }
 
 }
 

@@ -92,5 +92,13 @@ fastlane/Preview.html
 fastlane/screenshots
 fastlane/test_output
 
-other/*.swift
+other/MPV*.swift
 psd/
+temp/
+
+# FileMerge backup
+*.orig
+
+browser/Firefox_Open_In_IINA/*
+!browser/Firefox_Open_In_IINA/manifest.json
+
